@@ -1,10 +1,12 @@
 #include <exception.h>
+#include <interrupt.h>
 #include <thread.h>
 #include <sched.h>
 #include <signal.h>
 
-/* TODO `exc_before_leave` should be called with enabled interrupts. */
 void exc_before_leave(exc_frame_t *kframe) {
+  intr_enable();
+
   thread_t *td = thread_self();
 
   /* If thread requested not to be preempted, then do not switch out! */
@@ -24,4 +26,6 @@ void exc_before_leave(exc_frame_t *kframe) {
       sig_deliver(sig);
     td->td_flags &= ~TDF_NEEDSIGCHK;
   }
+
+  intr_disable();
 }
