@@ -89,10 +89,10 @@ static void update_wired_pde(pmap_t *umap) {
    * to skip ASID check. */
   tlbentry_t e = {.hi = PTE_VPN2(PD_BASE),
                   .lo0 = PTE_GLOBAL,
-                  .lo1 = PTE_PFN(kmap->pde_page->paddr) | PTE_KERNEL};
+                  .lo1 = PTE_WITH_PADDR(kmap->pde_page->paddr) | PTE_KERNEL};
 
   if (umap)
-    e.lo0 = PTE_PFN(umap->pde_page->paddr) | PTE_KERNEL;
+    e.lo0 = PTE_WITH_PADDR(umap->pde_page->paddr) | PTE_KERNEL;
 
   tlb_write(0, &e);
 }
@@ -182,7 +182,7 @@ static void pmap_add_pde(pmap_t *pmap, vm_addr_t vaddr) {
   klog("Page table fragment %08lx allocated at %08lx", PTF_ADDR_OF(vaddr),
        pg->paddr);
 
-  PDE_OF(pmap, vaddr) = PTE_PFN(pg->paddr) | PTE_KERNEL;
+  PDE_OF(pmap, vaddr) = PTE_WITH_PADDR(pg->paddr) | PTE_KERNEL;
 
   pte_t *pte = (pte_t *)PTF_ADDR_OF(vaddr);
   for (int i = 0; i < PTF_ENTRIES; i++)
@@ -223,7 +223,7 @@ static void pmap_set_pte(pmap_t *pmap, vm_addr_t vaddr, pm_addr_t paddr,
   if (!is_valid(PDE_OF(pmap, vaddr)))
     pmap_add_pde(pmap, vaddr);
 
-  PTE_OF(pmap, vaddr) = PTE_PFN(paddr) | vm_prot_map[prot] |
+  PTE_OF(pmap, vaddr) = PTE_WITH_PADDR(paddr) | vm_prot_map[prot] |
                         (in_kernel_space(vaddr) ? PTE_GLOBAL : 0);
   klog("Add mapping for page %08lx (PTE at %08lx)", (vaddr & PTE_MASK),
        (vm_addr_t)&PTE_OF(pmap, vaddr));

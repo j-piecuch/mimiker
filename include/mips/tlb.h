@@ -2,6 +2,7 @@
 #define _MIPS_TLB_H_
 
 #include <stdint.h>
+#include <vm.h>
 
 typedef uint32_t tlbhi_t;
 typedef uint32_t tlblo_t;
@@ -34,10 +35,13 @@ typedef struct {
 #define PTE_GLOBAL 0x00000001
 #define PTE_PROT_MASK (PTE_NO_READ | PTE_NO_EXEC | PTE_DIRTY | PTE_VALID)
 
-#define PTE_PFN(addr) (((addr) >> PTE_PFN_SHIFT) & PTE_PFN_MASK)
-#define PTE_CACHE(cache) (((cache) << PTE_CACHE_SHIFT) & PTE_CACHE_MASK)
-#define PTE_PFN_OF(pte) (((pte)&PTE_PFN_MASK) << PTE_PFN_SHIFT)
-#define PTE_CACHE_OF(pte) (((cache)&PTE_CACHE_MASK) >> PTE_CACHE_MASK)
+#define PTE_WITH_PFN(pfn) (((pfn) << PTE_PFN_SHIFT) & PTE_PFN_MASK)
+#define PTE_PFN(pte) (((pte)&PTE_PFN_MASK) >> PTE_PFN_SHIFT)
+#define PTE_WITH_PADDR(paddr)                                                  \
+  ((paddr >> (PAGE_SHIFT - PTE_PFN_SHIFT)) & PTE_PFN_MASK)
+#define PTE_PADDR(pte) (((pte)&PTE_PFN_MASK) << (PAGE_SHIFT - PTE_PFN_SHIFT))
+#define PTE_WITH_CACHE(cache) (((cache) << PTE_CACHE_SHIFT) & PTE_CACHE_MASK)
+#define PTE_CACHE(pte) (((pte)&PTE_CACHE_MASK) >> PTE_CACHE_SHIFT)
 
 #define PTE_LO_INDEX_MASK 0x00001000
 #define PTE_LO_INDEX_SHIFT 12
