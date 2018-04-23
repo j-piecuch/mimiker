@@ -1,18 +1,16 @@
 #ifndef _VIRT_MEM_H_
 #define _VIRT_MEM_H_
 
+#ifndef __ASSEMBLER__
+
 #include <common.h>
 #include <queue.h>
 #include <tree.h>
 
+#endif /* !__ASSEMBLER__ */
+
 #define PAGESIZE 4096
 #define PAGE_SHIFT 12
-
-#define PG_SIZE(pg) ((pg)->size * PAGESIZE)
-#define PG_START(pg) ((pg)->paddr)
-#define PG_END(pg) ((pg)->paddr + PG_SIZE(pg))
-#define PG_VADDR_START(pg) ((pg)->vaddr)
-#define PG_VADDR_END(pg) ((pg)->vaddr + PG_SIZE(pg))
 
 #define PM_RESERVED 1  /* non releasable page */
 #define PM_ALLOCATED 2 /* page has been allocated */
@@ -20,6 +18,14 @@
 
 #define VM_ACCESSED 1 /* page has been accessed since last check */
 #define VM_MODIFIED 2 /* page has been modified since last check */
+
+#ifndef __ASSEMBLER__
+
+#define PG_SIZE(pg) ((pg)->size * PAGESIZE)
+#define PG_START(pg) ((pg)->paddr)
+#define PG_END(pg) ((pg)->paddr + PG_SIZE(pg))
+#define PG_VADDR_START(pg) ((pg)->vaddr)
+#define PG_VADDR_END(pg) ((pg)->vaddr + PG_SIZE(pg))
 
 typedef intptr_t vm_paddr_t;
 typedef intptr_t vm_offset_t;
@@ -59,5 +65,7 @@ typedef struct vm_map vm_map_t;
 typedef struct vm_map_entry vm_map_entry_t;
 typedef struct vm_object vm_object_t;
 typedef struct pager pager_t;
+
+#endif /* !__ASSEMBLER__ */
 
 #endif /* _VIRT_MEM_H_ */

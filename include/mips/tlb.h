@@ -1,8 +1,11 @@
 #ifndef _MIPS_TLB_H_
 #define _MIPS_TLB_H_
 
-#include <stdint.h>
 #include <vm.h>
+
+#ifndef __ASSEMBLER__
+
+#include <stdint.h>
 
 typedef uint32_t tlbhi_t;
 typedef uint32_t tlblo_t;
@@ -15,6 +18,8 @@ typedef struct {
   tlblo_t lo0;
   tlblo_t lo1;
 } tlbentry_t;
+
+#endif /* !__ASSEMBLER__ */
 
 #define MAX_ASID C0_ENTRYHI_ASID_MASK
 
@@ -56,6 +61,8 @@ typedef struct {
 
 #define PT_BASE MIPS_KSEG2_START
 
+#ifndef __ASSEMBLER__
+
 void tlb_init(void);
 void tlb_print(void);
 
@@ -91,5 +98,7 @@ void tlb_overwrite_random(tlbentry_t *e);
  * with EntryHi, EntryLo0, EntryLo1 values and index will be returned.
  * Otherwise tlb_probe will return with negative value. */
 int tlb_probe(tlbentry_t *e);
+
+#endif /* !__ASSEMBLER__  */
 
 #endif /* !_MIPS_TLB_H_ */
