@@ -83,9 +83,9 @@ miss:
         # Note: no nop inside delay slot -- executing the ins instruction
         # won't hurt us if we jump to invalid.
 
+valid:
         # Load the PDE into the TLB.
         ins     k0, zero, 2, 1                  # Clear bit 2.
-valid:
         lw      k1, 0(k0)
         mtc0    k1, C0_ENTRYLO0
         lw      k1, 4(k0)
