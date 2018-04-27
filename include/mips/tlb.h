@@ -59,7 +59,7 @@ typedef struct {
 #define PTE_VPN2(addr) ((addr)&PTE_VPN2_MASK)
 #define PTE_ASID(asid) ((asid)&PTE_ASID_MASK)
 
-#define PT_BASE MIPS_KSEG2_START
+#define PT_BASE (MIPS_KSEG2_START + 0x00200000)
 
 #ifndef __ASSEMBLER__
 

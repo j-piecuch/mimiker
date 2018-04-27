@@ -41,7 +41,9 @@ static MALLOC_DEFINE(M_PMAP, "pmap", 4, 8);
 #define PMAP_USER_BEGIN 0x00000000
 #define PMAP_USER_END MIPS_KSEG0_START /* useg */
 
-#define PD_BASE (PT_BASE + PT_SIZE)
+#define USER_PT_MAP PTF_ADDR_OF(PT_BASE)
+#define KERNEL_PT_MAP PTF_ADDR_OF(PT_BASE + PTE_INDEX(MIPS_KSEG2_START) * sizeof(pte_t))
+
 #define PTE_KERNEL (PTE_VALID | PTE_DIRTY | PTE_GLOBAL)
 
 static bool is_valid(pte_t pte) {
@@ -59,6 +61,8 @@ static bool in_kernel_space(vm_addr_t addr) {
 static pmap_t kernel_pmap;
 static bitstr_t asid_used[bitstr_size(MAX_ASID)] = {0};
 static spinlock_t *asid_lock = &SPINLOCK_INITIALIZER();
+
+static pte_t * const pt_map = ((pte_t *)PT_BASE) + PTE_INDEX(PT_BASE);
 
 static asid_t alloc_asid(void) {
   int free;
@@ -84,14 +88,22 @@ static void update_wired_pde(pmap_t *umap) {
 
   /* Both ENTRYLO0 and ENTRYLO1 must have G bit set for address translation
    * to skip ASID check. */
-  tlbentry_t e = {.hi = PTE_VPN2(PD_BASE),
-                  .lo0 = PTE_GLOBAL,
-                  .lo1 = PTE_WITH_PADDR(kmap->pde_page->paddr) | PTE_KERNEL};
+  tlblo_t user_lo = umap != NULL ?
+    PTE_WITH_PADDR(umap->pde_page->paddr) | PTE_KERNEL :
+    PTE_GLOBAL;
 
-  if (umap)
-    e.lo0 = PTE_WITH_PADDR(umap->pde_page->paddr) | PTE_KERNEL;
+  tlblo_t kernel_lo = PTE_WITH_PADDR(kmap->pde_page->paddr) | PTE_KERNEL;
+
+  tlbentry_t e = {.hi = PTE_VPN2(USER_PT_MAP),
+                  .lo0 = user_lo,
+                  .lo1 = kernel_lo};
 
   tlb_write(0, &e);
+
+  /* Update entries in the PT */
+  if (umap)
+    PTE_OF(kmap, umap->pde_page->vaddr) = user_lo;
+  PTE_OF(kmap, kmap->pde_page->vaddr) = kernel_lo;
 }
 
 static void pmap_setup(pmap_t *pmap, vm_addr_t start, vm_addr_t end) {
@@ -99,11 +111,11 @@ static void pmap_setup(pmap_t *pmap, vm_addr_t start, vm_addr_t end) {
 
   /* Place user & kernel PDEs after virtualized page table. */
   vm_page_t *pde_page = pm_alloc(1);
-  pde_page->vaddr = PD_BASE + (user_pde ? 0 : PD_SIZE);
+  pde_page->vaddr = user_pde ? USER_PT_MAP : KERNEL_PT_MAP;
 
   pmap->pte = (pte_t *)PT_BASE;
   pmap->pde_page = pde_page;
-  pmap->pde = (pte_t *)pde_page->vaddr;
+  pmap->pde = pt_map;
   pmap->start = start;
   pmap->end = end;
   pmap->asid = alloc_asid();
@@ -112,7 +124,7 @@ static void pmap_setup(pmap_t *pmap, vm_addr_t start, vm_addr_t end) {
 
   update_wired_pde(user_pde ? pmap : NULL);
 
-  for (int i = 0; i < PD_ENTRIES; i++)
+  for (unsigned i = PDE_INDEX(start); i < PDE_INDEX(end); i++)
     pmap->pde[i] = in_kernel_space(i * PTF_ENTRIES * PAGESIZE) ? PTE_GLOBAL : 0;
 }
 
@@ -129,7 +141,7 @@ void pmap_reset(pmap_t *pmap) {
 }
 
 void pmap_init(void) {
-  pmap_setup(&kernel_pmap, PMAP_KERNEL_BEGIN + PT_SIZE + PD_SIZE * 2,
+  pmap_setup(&kernel_pmap, PT_BASE + PT_SIZE,
              PMAP_KERNEL_END);
 }
 
@@ -368,7 +380,7 @@ void tlb_exception_handler(exc_frame_t *frame) {
        frame->pc, vaddr);
 
   /* Accesses to the page table should never go beyond tlb_refill. */
-  assert(vaddr < PT_BASE || PT_BASE + PT_SIZE + 2 * PAGESIZE <= vaddr);
+  assert(vaddr < PT_BASE || PT_BASE + PT_SIZE <= vaddr);
 
   vm_map_t *map = get_active_vm_map_by_addr(vaddr);
   if (!map) {
