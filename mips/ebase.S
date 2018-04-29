@@ -43,34 +43,19 @@ tlb_refill:
         mfc0    k0, C0_INDEX
         # Index < 0 means there was no entry with matching VPN2.
         bltz    k0, miss
-        nop
-maybe_hit:
-        # We found an entry with matching VPN2, but that doesn't mean that it's valid!
-        # We need to check it.
+        mtc0    k1, C0_ENTRYHI                          # (delay slot) Restore original EntryHi.
+hit:
+        # We found an entry with matching VPN2.
+        # Normally this wouldn't mean that that the access is safe because
+        # TLB entries map pairs of pages, which means one could be valid while
+        # the other is invalid. However, the system allocates PTFs in pairs,
+        # so in the case of accesses to the Page Table both entries are valid.
 
-        # Read the entry with matching VPN2 (note: tlbr overwrites EntryHi!)
-        tlbr
-        mtc0    k1, C0_ENTRYHI                  # Restore original EntryHi.
         mfc0    k0, C0_CONTEXT
         sra     k0, 1
         lui     k1, 0x0020
         addu    k0, k0, k1
-        ext     k1, k0, PAGE_SHIFT, 1           # Check if we accessed an even or odd page
-        ehb
 
-        # If we accessed an even page, k1 == 0 and both mfc0 instructions will be executed,
-        # so the final value of k1 will be the value of EntryLo0.
-        # If we accessed an odd page, k1 == 1 and only the first mfc0 instruction will because
-        # executed, so the final value of k1 will be the value of EntryLo1.
-        bnez    k1, 1f
-        mfc0    k1, C0_ENTRYLO1
-        mfc0    k1, C0_ENTRYLO0
-1:
-        andi    k1, ENTRYLO0_V_MASK             # Is the entry valid?
-        beqz    k1, invalid
-        nop
-hit:
-        # The entry is valid, so it's safe to access the PT (we won't miss in the TLB).
         # Simply grab the PTEs and load them into the TLB.
         lw      k1, 0(k0)
         mtc0    k1, C0_ENTRYLO0
@@ -79,33 +64,8 @@ hit:
         ehb
         tlbwr
         eret
-        
-        .org    0x100
-        .local  cache_error
-
-cache_error:
-1:      j       1b
-        nop
-
-        .org    0x180
-        .local  general_exception
-
-general_exception:
-        la      k1, mips_exc_handler
-        j       exc_enter
-        mfc0    k0, C0_STATUS           # (delay slot) load status register
-
-        .org    0x200
-        .local  irq
-
-irq:
-        la      k1, mips_intr_handler
-        j       exc_enter
-        mfc0    k0, C0_STATUS           # (delay slot) load status register
-
 miss:
         # Find PDE mapping the Page Table Fragment we want to access.
-        mtc0    k1, C0_ENTRYHI                  # Restore original EntryHi.
         mfc0    k1, C0_BADVADDR
         srl     k1, PDE_SHIFT                   # k1 = PDE index
         sll     k1, 2                           # k1 = PDE offset = PDE index * 4
@@ -135,20 +95,40 @@ valid:
         ehb
         tlbwr
         ehb
-        mtc0    k1, C0_ENTRYHI                          # Restore original EntryHi.
-        mfc0    k0, C0_CONTEXT
-        sra     k0, 1
-        lui     k1, 0x0020
         j       hit
-        addu    k0, k0, k1
+        mtc0    k1, C0_ENTRYHI                          # (delay slot) Restore original EntryHi.
 invalid:
         # The access is invalid, so write invalid entries into the TLB.
         # Retrying the instruction that missed in the TLB is going to generate
-        # a protection fault (but not another TLB miss).
+        # a TLB invalid exception (but not another TLB miss).
         mtc0    zero, C0_ENTRYLO0
         mtc0    zero, C0_ENTRYLO1
         ehb
         tlbwr
         eret
+
+        .org    0x100
+        .local  cache_error
+
+cache_error:
+1:      j       1b
+        nop
+
+        .org    0x180
+        .local  general_exception
+
+general_exception:
+        la      k1, mips_exc_handler
+        j       exc_enter
+        mfc0    k0, C0_STATUS           # (delay slot) load status register
+
+        .org    0x200
+        .local  irq
+
+irq:
+        la      k1, mips_intr_handler
+        j       exc_enter
+        mfc0    k0, C0_STATUS           # (delay slot) load status register
+
 
 # vim: sw=8 ts=8 et
