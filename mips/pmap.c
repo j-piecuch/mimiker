@@ -181,21 +181,48 @@ bool pmap_is_range_mapped(pmap_t *pmap, vm_addr_t start, vm_addr_t end) {
   return true;
 }
 
-/* Add PT to PD so kernel can handle access to @vaddr. */
-static void pmap_add_pde(pmap_t *pmap, vm_addr_t vaddr) {
-  /* assume page table fragment not present in physical memory */
-  assert(!is_valid(PDE_OF(pmap, vaddr)));
-
+/* Allocate a new PTF. */
+static vm_page_t *pmap_alloc_ptf(pmap_t *pmap, vm_addr_t vaddr) {
   vm_page_t *pg = pm_alloc(1);
   TAILQ_INSERT_TAIL(&pmap->pte_pages, pg, pt.list);
   klog("Page table fragment %08lx allocated at %08lx", PTF_ADDR_OF(vaddr),
        pg->paddr);
+  return pg;
+}
 
-  PDE_OF(pmap, vaddr) = PTE_WITH_PADDR(pg->paddr) | PTE_KERNEL;
+/*
+ * Allocate a PTF and add a PDE so kernel can handle access to @vaddr.
+ * PTFs are allocated in pairs so that TLB entries containing PDEs
+ * always contain a pair of valid PDEs. This simplifies the handling
+ * of TLB refill exceptions.
+ */
+static void pmap_add_pde(pmap_t *pmap, vm_addr_t vaddr) {
+  /* assume page table fragment not present in physical memory */
+  assert(!is_valid(PDE_OF(pmap, vaddr)));
 
-  pte_t *pte = (pte_t *)PTF_ADDR_OF(vaddr);
-  vm_addr_t base_addr = vaddr & -PAGESIZE;
-  for (int i = 0; i < PTF_ENTRIES; i++)
+  vm_page_t *pg = pmap_alloc_ptf(pmap, vaddr);
+
+  /* Virtual address whose PDE is adjacent to the one of vaddr. */
+  vm_addr_t adj_vaddr = vaddr ^ (1 << PDE_SHIFT);
+
+  unsigned num_ptes = PTF_ENTRIES;
+  vm_addr_t min_vaddr = vaddr;
+
+  PDE_OF(pmap, vaddr) |= PTE_WITH_PADDR(pg->paddr) | PTE_VALID | PTE_DIRTY;
+  /* If the adjacent PTF isn't allocated, allocate it and add the
+   * an appropriate PDE. */
+  if (!is_valid(PDE_OF(pmap, adj_vaddr))) {
+    vm_page_t *adj_pg = pmap_alloc_ptf(pmap, adj_vaddr);
+    PDE_OF(pmap, adj_vaddr) |=
+      PTE_WITH_PADDR(adj_pg->paddr) | PTE_VALID | PTE_DIRTY;
+    if (adj_vaddr < vaddr)
+      min_vaddr = adj_vaddr;
+    num_ptes *= 2;
+  }
+
+  pte_t *pte = (pte_t *)PTF_ADDR_OF(min_vaddr);
+  vm_addr_t base_addr = min_vaddr & -PAGESIZE;
+  for (unsigned i = 0; i < num_ptes; i++)
     /* Only PTEs mapping kseg2 should be global. */
     pte[i] = in_kernel_space(base_addr + i * PAGESIZE) ? PTE_GLOBAL : 0;
 }
