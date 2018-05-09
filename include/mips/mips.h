@@ -8,6 +8,7 @@ typedef unsigned long vaddr_t; /* a virtual address */
 
 #include <mips/m32c0.h>
 #include <mips/m32ins.h>
+#include <const.h>
 
 /*
  * Initial virtual address space is partitioned into four segments:
@@ -23,6 +24,11 @@ typedef unsigned long vaddr_t; /* a virtual address */
 #define MIPS_KSEG2_START 0xc0000000
 #define MIPS_PHYS_MASK 0x1fffffff
 
+#define MIPS_KSEG0_TO_PHYS(x) (_AT(uintptr_t, x) & MIPS_PHYS_MASK)
+#define MIPS_PHYS_TO_KSEG0(x) (_AT(uintptr_t, x) | _AT(intptr_t, MIPS_KSEG0_START))
+#define MIPS_KSEG1_TO_PHYS(x) (_AT(uintptr_t, x) & MIPS_PHYS_MASK)
+#define MIPS_PHYS_TO_KSEG1(x) (_AT(uintptr_t, x) | _AT(intptr_t, MIPS_KSEG1_START))
+
 #ifndef __ASSEMBLER__
 
 /*
@@ -32,11 +38,6 @@ typedef unsigned int reg_t;
 typedef unsigned int reg32_t;
 typedef signed int sreg_t;
 typedef float freg_t;
-
-#define MIPS_KSEG0_TO_PHYS(x) ((uintptr_t)(x)&MIPS_PHYS_MASK)
-#define MIPS_PHYS_TO_KSEG0(x) ((uintptr_t)(x) | (intptr_t)MIPS_KSEG0_START)
-#define MIPS_KSEG1_TO_PHYS(x) ((uintptr_t)(x)&MIPS_PHYS_MASK)
-#define MIPS_PHYS_TO_KSEG1(x) ((uintptr_t)(x) | (intptr_t)MIPS_KSEG1_START)
 
 #define MIPS_KSEG0_P(x) (((intptr_t)(x) & ~MIPS_PHYS_MASK) == MIPS_KSEG0_START)
 #define MIPS_KSEG1_P(x) (((intptr_t)(x) & ~MIPS_PHYS_MASK) == MIPS_KSEG1_START)
