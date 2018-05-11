@@ -117,27 +117,28 @@ char *kenv_get(const char *key) {
   return NULL;
 }
 
-extern uint8_t __kernel_start[];
-
+extern uint8_t __kernel_phys_start[];
+extern uint8_t __ebss[];
+extern uint8_t __ebss_phys[];
 static void pm_bootstrap(unsigned memsize) {
   pm_init();
 
-  pm_seg_t *seg = kbss_grow(pm_seg_space_needed(memsize));
-
+  //pm_seg_t *seg = kbss_grow(pm_seg_space_needed(memsize));
+  pm_seg_t *seg = (pm_seg_t *)__ebss;
   /*
    * Let's fix size of kernel bss section. We need to tell physical memory
    * allocator not to manage memory used by the kernel image along with all
    * memory allocated using \a kbss_grow.
    */
-  void *__kernel_end = kbss_fix();
+  //  void *__kernel_end = kbss_fix();
 
   /* create Malta physical memory segment */
   pm_seg_init(seg, MALTA_PHYS_SDRAM_BASE, MALTA_PHYS_SDRAM_BASE + memsize,
               MIPS_KSEG0_START);
 
   /* reserve kernel image and physical memory description space */
-  pm_seg_reserve(seg, MIPS_KSEG0_TO_PHYS(__kernel_start),
-                 MIPS_KSEG0_TO_PHYS(__kernel_end));
+  pm_seg_reserve(seg, 0, align((intptr_t)__ebss_phys +
+                               pm_seg_space_needed(memsize), PAGESIZE));
 
   pm_add_segment(seg);
 }

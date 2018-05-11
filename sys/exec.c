@@ -292,5 +292,7 @@ noreturn void run_program(const exec_args_t *prog) {
   if (do_exec(prog) != -EJUSTRETURN)
     panic("Failed to start %s program.", prog->argv[0]);
 
-  user_exc_leave();
+  void (* volatile fun)(void) = user_exc_leave;
+  (*fun)();
+  while (1) {}
 }
