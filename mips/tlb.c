@@ -56,16 +56,6 @@ static void read_tlb_size(void) {
 
 void tlb_init(void) {
   read_tlb_size();
-  if (tlb_size() == 0)
-    panic("No TLB detected!");
-
-  tlb_invalidate_all();
-  /* Shift C0_CONTEXT left, because we shift it right in tlb_refill_handler.
-   * This is little hack to make page table sized 4MB, but causes us to
-   * keep PTE in KSEG2. */
-  mips32_setcontext(PT_BASE << 1);
-  /* First wired TLB entry is shared between kernel-PDE and user-PDE. */
-  mips32_setwired(1);
 }
 
 void tlb_invalidate(tlbhi_t hi) {
@@ -155,9 +145,20 @@ void tlb_print(void) {
   mips32_setasid(saved);
 }
 
-static tlbentry_t _gdb_tlb_entry;
+static __section(".data.kseg0") tlbentry_t _gdb_tlb_entry;
+
+unsigned __section(".text.kseg0") _gdb_tlb_size(void) {
+  uint32_t config1 = mips32_getconfig1();
+  return _mips32r2_ext(config1, CFG1_MMUS_SHIFT, CFG1_MMUS_BITS) + 1;
+}
 
 /* Fills _dgb_tlb_entry structure with TLB entry. Used by debugger. */
-void _gdb_tlb_read_index(unsigned i) {
-  tlb_read(i, &_gdb_tlb_entry);
+void __section(".text.kseg0") __optimize("O0") _gdb_tlb_read_index(unsigned i) {
+  tlbhi_t saved = mips32_getentryhi();
+  mips32_setindex(i);
+  asm volatile("tlbr; ehb" : : : "memory");
+  _gdb_tlb_entry = (tlbentry_t){.hi = mips32_getentryhi(),
+                                .lo0 = mips32_getentrylo0(),
+                                .lo1 = mips32_getentrylo1()};
+  mips32_setentryhi(saved);
 }

@@ -5,7 +5,7 @@
 #include <vm.h>
 #include <ktest.h>
 
-static int test_kernel_pmap(void) {
+static int __unused test_kernel_pmap(void) {
   pmap_t *pmap = get_kernel_pmap();
 
   vm_page_t *pg = pm_alloc(16);
@@ -71,5 +71,5 @@ static int test_user_pmap(void) {
   return KTEST_SUCCESS;
 }
 
-KTEST_ADD(pmap_kernel, test_kernel_pmap, 0);
+//KTEST_ADD(pmap_kernel, test_kernel_pmap, 0);
 KTEST_ADD(pmap_user, test_user_pmap, 0);

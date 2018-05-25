@@ -2,7 +2,8 @@
 #include <stdc.h>
 #include <vm.h>
 
-/* The end of the kernel's .bss section. Provided by the linker. */
+/* The end of the kernel's .bss section BEFORE boot args are copied
+ * (see cboot.c). Provided by the linker. */
 extern uint8_t __ebss[];
 
 static struct {
@@ -12,9 +13,10 @@ static struct {
   void *end;
 } kbss = {__ebss, NULL};
 
-void kbss_init(void) {
+void kbss_init(void *new_ebss) {
   extern uint8_t __bss[];
   bzero(__bss, __ebss - __bss);
+  kbss.ptr = new_ebss;
 }
 
 void *kbss_grow(size_t size) {

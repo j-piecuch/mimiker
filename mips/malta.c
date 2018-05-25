@@ -117,8 +117,6 @@ char *kenv_get(const char *key) {
   return NULL;
 }
 
-extern uint8_t __kernel_start[];
-
 static void pm_bootstrap(unsigned memsize) {
   pm_init();
 
@@ -129,15 +127,14 @@ static void pm_bootstrap(unsigned memsize) {
    * allocator not to manage memory used by the kernel image along with all
    * memory allocated using \a kbss_grow.
    */
-  void *__kernel_end = kbss_fix();
+  void *kernel_end = kbss_fix();
 
   /* create Malta physical memory segment */
   pm_seg_init(seg, MALTA_PHYS_SDRAM_BASE, MALTA_PHYS_SDRAM_BASE + memsize,
               MIPS_KSEG0_START);
 
   /* reserve kernel image and physical memory description space */
-  pm_seg_reserve(seg, MIPS_KSEG0_TO_PHYS(__kernel_start),
-                 MIPS_KSEG0_TO_PHYS(__kernel_end));
+  pm_seg_reserve(seg, 0, MIPS_KSEG0_TO_PHYS(kernel_end));
 
   pm_add_segment(seg);
 }
@@ -154,10 +151,10 @@ static void thread_bootstrap(void) {
   PCPU_SET(curthread, td);
 }
 
-void platform_init(int argc, char **argv, char **envp, unsigned memsize) {
-  kbss_init();
+void platform_init(struct boot_frame *f) {
+  kbss_init(f->ebss);
 
-  setup_kenv(argc, argv, envp);
+  setup_kenv(f->argc, f->argv, f->envp);
   cn_init();
   klog_init();
   pcpu_init();
@@ -165,7 +162,7 @@ void platform_init(int argc, char **argv, char **envp, unsigned memsize) {
   tlb_init();
   mips_timer_init();
   mips_intr_init();
-  pm_bootstrap(memsize);
+  pm_bootstrap(f->memsize);
   pmap_init();
   pool_bootstrap();
   kmem_bootstrap();

@@ -5,6 +5,7 @@ TOPDIR = $(realpath ..)
 GENASSYM = $(TOPDIR)/script/genassym.py $(NM)
 
 SOURCES_C = atomic.c \
+	    cboot.c \
 	    cbus.c \
 	    context.c \
 	    cpu.c \

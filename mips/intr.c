@@ -47,19 +47,6 @@ static intr_chain_t mips_intr_chain[8] = {
   MIPS_INTR_CHAIN(MIPS_HWINT5, "hwint(5)")};
 
 void mips_intr_init(void) {
-  /*
-   * Enable Vectored Interrupt Mode as described in „MIPS32® 24KETM Processor
-   * Core Family Software User’s Manual”, chapter 6.3.1.2.
-   */
-
-  /* The location of exception vectors is set to EBase. */
-  mips32_set_c0(C0_EBASE, _ebase);
-  mips32_bc_c0(C0_STATUS, SR_BEV);
-  /* Use the special interrupt vector at EBase + 0x200. */
-  mips32_bs_c0(C0_CAUSE, CR_IV);
-  /* Set vector spacing to 0. */
-  mips32_set_c0(C0_INTCTL, INTCTL_VS_0);
-
   for (unsigned i = 0; i < 8; i++)
     intr_chain_register(&mips_intr_chain[i]);
 }

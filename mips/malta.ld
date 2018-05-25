@@ -24,9 +24,24 @@ SECTIONS
   __ebase_phys_start = . - _ram;
   .ebase 0x80100000: AT(__ebase_phys_start)
   {
-    __kernel_start = ABSOLUTE(.);
     /* Exception entry points. */
     *(.ebase)
+  } : lowmem
+
+  .boot : ALIGN(4)
+  {
+    *(.boot)
+    *cboot.o(.text)
+  } : lowmem
+
+  .text.kseg0 : ALIGN(4)
+  {
+    *(.text.kseg0)
+  } : lowmem
+
+  .data.kseg0 : ALIGN(4)
+  {
+    *(.data.kseg0)
   } : lowmem
 
   .pcpu : ALIGN(4)
@@ -40,16 +55,27 @@ SECTIONS
     *(.text.wired)
   } : lowmem
 
-  .text : ALIGN(4096)
+  . += 4K; /* Boot stack */
+  . = ALIGN(4096);
+  __boot_stack = .;
+
+  . = 0xc0401000;
+  __kpd = .;
+  __kpd_phys = LOADADDR(.text.wired) + (__boot_stack - ADDR(.text.wired));
+  . += 4096;
+  __kernel_phys_start = __kpd_phys + 4096;
+  .text : AT(__kernel_phys_start)
   {
+    __kernel_start = ABSOLUTE(.);
     __text = ABSOLUTE(.);
-    *(EXCLUDE_FILE (*exc.o) .text .text.*)
+    EXCLUDE_FILE (*exc.o *cboot.o) *(.text .text.*)
+    . = ALIGN(4096);
     __etext = ABSOLUTE(.);
   } : text
 
   /* The kernel expects the ramdisk start & end addresses
    * to be page-aligned. */
-  .initrd : ALIGN(4096)
+  .initrd :
   {
     __rd_start = ABSOLUTE(.);
     *(.initrd)
@@ -63,28 +89,34 @@ SECTIONS
   .rodata : ALIGN(4)
   {
      *(.rodata .rodata.*)
+     . = ALIGN(4096);
   } : rodata
 
-  .data : ALIGN(4096)
+  .data :
   {
     __data = ABSOLUTE(.);
     _gp = .;
+    . += 4096;
+
     *(.data .data.*)
     *(.sdata .sdata.*)
     *(.eh_frame .eh_frame.*)
-    . = ALIGN (4);
+    . = ALIGN (4096);
     __edata = ABSOLUTE(.);
   } : data
+  __data_phys = LOADADDR(.data);
 
-  .bss : ALIGN(4)
+  .bss :
   {
     __bss = ABSOLUTE(.);
     *(.sbss .scommon)
     *(.bss .bss.*)
     *(COMMON)
-    . = ALIGN (4);
+    . = ALIGN (4096);
     __ebss = ABSOLUTE(.);
   }
+  __bss_phys = LOADADDR(.bss);
+  __ebss_phys = LOADADDR(.bss) + SIZEOF(.bss);
 
   /* Sections to be discarded */
   /DISCARD/ :

@@ -3,8 +3,11 @@
 
 #include <common.h>
 
-/* Clears kernel bss section. */
-void kbss_init(void);
+/*
+ * Clears kernel bss section.
+ * Takes the end address of the bss section as an argument.
+ */
+void kbss_init(void *new_ebss);
 
 /*
  * This function provides simple dynamic memory allocation that may be used

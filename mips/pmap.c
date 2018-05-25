@@ -18,14 +18,15 @@
 
 static MALLOC_DEFINE(M_PMAP, "pmap", 4, 8);
 
-#define PTE_INDEX(x) (((x)&PTE_MASK) >> PTE_SHIFT)
-#define PDE_INDEX(x) (((x)&PDE_MASK) >> PDE_SHIFT)
-
 #define PTE_OF(pmap, addr) ((pmap)->pte[PTE_INDEX(addr)])
 #define PDE_OF(pmap, addr) ((pmap)->pde[PDE_INDEX(addr)])
 #define PTF_ADDR_OF(vaddr) (PT_BASE + PDE_INDEX(vaddr) * PTF_SIZE)
 
 #define PTE_KERNEL (PTE_VALID | PTE_DIRTY | PTE_GLOBAL)
+#define PTE_USER   (PTE_VALID | PTE_DIRTY)
+
+extern pte_t __kpd[];
+extern uint8_t __kpd_phys[];
 
 static bool is_valid(pte_t pte) {
   return pte & PTE_VALID;
@@ -63,13 +64,12 @@ static void free_asid(asid_t asid) {
 }
 
 static void update_wired_pde(pmap_t *umap) {
-  pmap_t *kmap = get_kernel_pmap();
 
   /* Both ENTRYLO0 and ENTRYLO1 must have G bit set for address translation
    * to skip ASID check. */
   tlbentry_t e = {.hi = PTE_VPN2(PD_BASE),
                   .lo0 = PTE_GLOBAL,
-                  .lo1 = PTE_PFN(kmap->pde_page->paddr) | PTE_KERNEL};
+                  .lo1 = PTE_PFN((uintptr_t)__kpd_phys) | PTE_KERNEL};
 
   if (umap)
     e.lo0 = PTE_PFN(umap->pde_page->paddr) | PTE_KERNEL;
@@ -81,22 +81,33 @@ static void pmap_setup(pmap_t *pmap, vm_addr_t start, vm_addr_t end) {
   bool user_pde = in_user_space(start);
 
   /* Place user & kernel PDEs after virtualized page table. */
-  vm_page_t *pde_page = pm_alloc(1);
-  pde_page->vaddr = PD_BASE + (user_pde ? 0 : PD_SIZE);
+  vm_page_t *pde_page;
+  if (user_pde) {
+    pde_page = pm_alloc(1);
+    pde_page->vaddr = PD_BASE;
+    pmap->pde = (pte_t *)PD_BASE;
+  } else {
+    pde_page = NULL;
+    pmap->pde = (pte_t *)KPD_KSEG2_BASE;
+  }
 
-  pmap->pte = (pte_t *)PT_BASE;
   pmap->pde_page = pde_page;
-  pmap->pde = (pte_t *)pde_page->vaddr;
+  pmap->pte = (pte_t *)PT_BASE;
   pmap->start = start;
   pmap->end = end;
   pmap->asid = alloc_asid();
   klog("Page directory table allocated at %p", (vm_addr_t)pmap->pde);
   TAILQ_INIT(&pmap->pte_pages);
 
-  update_wired_pde(user_pde ? pmap : NULL);
-
-  for (int i = 0; i < PD_ENTRIES; i++)
-    pmap->pde[i] = in_kernel_space(i * PTF_ENTRIES * PAGESIZE) ? PTE_GLOBAL : 0;
+  if (user_pde) {
+    pmap_t *old = get_user_pmap();
+    WITH_NO_PREEMPTION {
+      update_wired_pde(pmap);
+      for (int i = 0; i < PD_ENTRIES; i++)
+        pmap->pde[i] = 0;
+      update_wired_pde(old);
+    }
+  }
 }
 
 /* TODO: remove all mappings from TLB, evict related cache lines */
@@ -106,14 +117,16 @@ void pmap_reset(pmap_t *pmap) {
     TAILQ_REMOVE(&pmap->pte_pages, pg, pt.list);
     pm_free(pg);
   }
+  /* Only user pmaps can be reset. */
+  assert(pmap->pde_page != NULL);
   pm_free(pmap->pde_page);
   free_asid(pmap->asid);
   memset(pmap, 0, sizeof(pmap_t)); /* Set up for reuse. */
 }
 
 void pmap_init(void) {
-  pmap_setup(&kernel_pmap, PMAP_KERNEL_BEGIN + PT_SIZE + PD_SIZE * 2,
-             PMAP_KERNEL_END);
+  pmap_setup(&kernel_pmap, KERNEL_KSEG2_BASE,
+             KVA_END);
 }
 
 pmap_t *pmap_new(void) {
@@ -162,11 +175,15 @@ static void pmap_add_pde(pmap_t *pmap, vm_addr_t vaddr) {
   klog("Page table fragment %08lx allocated at %08lx", PTF_ADDR_OF(vaddr),
        pg->paddr);
 
-  PDE_OF(pmap, vaddr) = PTE_PFN(pg->paddr) | PTE_KERNEL;
+  pte_t flags = (pmap == &kernel_pmap) ? PTE_KERNEL : PTE_USER;
+
+  PDE_OF(pmap, vaddr) = PTE_PFN(pg->paddr) | flags;
+
+  pte_t fill = (pmap == &kernel_pmap) ? PTE_GLOBAL : 0;
 
   pte_t *pte = (pte_t *)PTF_ADDR_OF(vaddr);
   for (int i = 0; i < PTF_ENTRIES; i++)
-    pte[i] = PTE_GLOBAL;
+    pte[i] = fill;
 }
 
 /* TODO: implement */
@@ -200,11 +217,10 @@ static pte_t vm_prot_map[] = {
 /* TODO: what about caches? */
 static void pmap_set_pte(pmap_t *pmap, vm_addr_t vaddr, pm_addr_t paddr,
                          vm_prot_t prot) {
+  pte_t global_flag = (pmap == &kernel_pmap) ? PTE_GLOBAL : 0;
   if (!is_valid(PDE_OF(pmap, vaddr)))
     pmap_add_pde(pmap, vaddr);
-
-  PTE_OF(pmap, vaddr) = PTE_PFN(paddr) | vm_prot_map[prot] |
-                        (in_kernel_space(vaddr) ? PTE_GLOBAL : 0);
+  PTE_OF(pmap, vaddr) = PTE_PFN(paddr) | vm_prot_map[prot] | global_flag;
   klog("Add mapping for page %08lx (PTE at %08lx)", (vaddr & PTE_MASK),
        (vm_addr_t)&PTE_OF(pmap, vaddr));
 
@@ -350,6 +366,7 @@ void tlb_exception_handler(exc_frame_t *frame) {
 
   /* Accesses to the page table should never go beyond tlb_refill. */
   assert(vaddr < PT_BASE || PT_BASE + PT_SIZE + 2 * PAGESIZE <= vaddr);
+  assert(in_user_space(vaddr));
 
   vm_map_t *map = get_active_vm_map_by_addr(vaddr);
   if (!map) {

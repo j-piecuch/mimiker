@@ -3,7 +3,15 @@
 
 #include <mips/mips.h>
 
-void platform_init(int argc, char **argv, char **envp, unsigned memsize);
+struct boot_frame {
+  void *ebss;
+  int argc;
+  char **argv;
+  char **envp;
+  unsigned memsize;
+};
+
+void platform_init(struct boot_frame *f);
 
 /*
  * Malta Memory Map:

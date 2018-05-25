@@ -1,3 +1,4 @@
+#define _BOOTCODE /* Put code in .boot section */
 #include <mips/asm.h>
 #include <mips/pcpu.h>
 #include <mips/regdef.h>
@@ -38,15 +39,46 @@ LEAF(_start)
         and     t0, t1
         mtc0    t0, C0_CAUSE
 
+        la      sp, __boot_stack
+
+        # Put boot arguments on the stack so that we can pass a pointer
+        # to argv and envp to boot_init.
+        addi    sp, -16
+        sw      a0, 0(sp)       # argc
+        sw      a1, 4(sp)       # argv
+        sw      a2, 8(sp)       # envp
+        sw      a3, 12(sp)      # memsize
+
+        # The first argument to boot_init is argc, so we don't change a0
+        addi    a1, sp, 4       # 2nd argument = pointer to argv
+        jal     boot_init
+        addi    a2, sp, 8       # (delay slot) 3rd argument = pointer to envp
+
+        # The return value of boot_init is a kseg0 pointer to the new end of
+        # kernel .bss section. We'd like to pass it to platform_init, but
+        # we can't do it using registers because up to 4 arguments can be passed
+        # via registers. Therefore, we put all arguments on the stack and pass
+        # a pointer to the stack frame.
+
+        addi    sp, -4
+        sw      v0, 0(sp)       # Store the return value of boot_init on the stack
+
+        move    a0, sp          # Pass a pointer to the frame
+
+        # Now it should be safe to jump to the remainder of kernel code,
+        # which is linked to execute in kseg2.
+
         # Initialize the platform
-        jal     platform_init
+        la      t0, platform_init
+        jalr    t0
         nop
 
         # Switch to kernel main thread
         LOAD_PCPU(t0)
         move    a0, zero
         PTR_L   a1, PCPU_CURTHREAD(t0)
-        j       ctx_switch
+        la      t0, ctx_switch
+        jr      t0
         nop
 END(_start)
 
