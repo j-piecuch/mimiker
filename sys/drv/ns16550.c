@@ -92,6 +92,26 @@ static intr_filter_t ns16550_intr(void *data) {
   return res;
 }
 
+/* Called with tty->t_lock held. */
+static void ns16550_fill_tx(tty_t *tty, ns16550_state_t *ns16550) {
+  uint8_t byte;
+
+  while (true) {
+    spin_lock(&ns16550->lock);
+    if (ringbuf_full(&ns16550->tx_buf) || !ringbuf_getb(&tty->t_outq, &byte)) {
+      /* Enable TXRDY interrupts if there are characters in tx_buf. */
+      if (!ringbuf_empty(&ns16550->tx_buf))
+        set(ns16550->regs, IER, IER_ETXRDY);
+      ns16550->tty_outq_nonempty = !ringbuf_empty(&tty->t_outq);
+      spin_unlock(&ns16550->lock);
+      break;
+    }
+    ns16550->tty_outq_nonempty = !ringbuf_empty(&tty->t_outq);
+    ringbuf_putb(&ns16550->tx_buf, byte);
+    spin_unlock(&ns16550->lock);
+  }
+}
+
 static bool ns16550_getb_lock(ns16550_state_t *ns16550, uint8_t *byte_p) {
   spin_lock(&ns16550->lock);
   bool ret = ringbuf_getb(&ns16550->rx_buf, byte_p);
@@ -119,21 +139,7 @@ static void ns16550_tty_thread(void *arg) {
       }
       if (ipend & IIR_TXRDY) {
         /* Move characters from the tty's output queue to tx_buf. */
-        while (true) {
-          spin_lock(&ns16550->lock);
-          if (ringbuf_full(&ns16550->tx_buf) ||
-              !ringbuf_getb(&tty->t_outq, &byte)) {
-            /* Enable TXRDY interrupts if there are characters in tx_buf. */
-            if (!ringbuf_empty(&ns16550->tx_buf))
-              set(ns16550->regs, IER, IER_ETXRDY);
-            ns16550->tty_outq_nonempty = !ringbuf_empty(&tty->t_outq);
-            spin_unlock(&ns16550->lock);
-            break;
-          }
-          ns16550->tty_outq_nonempty = !ringbuf_empty(&tty->t_outq);
-          ringbuf_putb(&ns16550->tx_buf, byte);
-          spin_unlock(&ns16550->lock);
-        }
+        ns16550_fill_tx(tty, ns16550);
       }
     }
   }
@@ -150,11 +156,7 @@ static void ns16550_notify_out(tty_t *tty) {
   if (ringbuf_empty(&tty->t_outq))
     return;
 
-  WITH_SPIN_LOCK (&ns16550->lock) {
-    ns16550->tty_ipend |= IIR_TXRDY;
-    ns16550->tty_outq_nonempty = true;
-    cv_signal(&ns16550->tty_thread_cv);
-  }
+  ns16550_fill_tx(tty, ns16550);
 }
 
 static int ns16550_attach(device_t *dev) {
