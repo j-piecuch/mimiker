@@ -64,6 +64,7 @@ static void set_next_tick(mips_timer_state_t *state) {
   /* calculate next value of compare register based on timer period */
   state->compare.val += state->period_cntr;
   (void)read_count(state);
+  klog("count = %d", state->count.lo);
   assert(state->compare.val > state->count.val);
   mips32_set_c0(C0_COMPARE, state->compare.lo);
 }

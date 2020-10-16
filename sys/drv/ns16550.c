@@ -57,9 +57,10 @@ static intr_filter_t ns16550_intr(void *data) {
   ns16550_state_t *ns16550 = data;
   resource_t *uart = ns16550->regs;
   intr_filter_t res = IF_STRAY;
+  uint8_t iir = 0;
 
   WITH_SPIN_LOCK (&ns16550->lock) {
-    uint8_t iir = in(uart, IIR);
+    iir = in(uart, IIR);
 
     /* data ready to be received? */
     if (iir & IIR_RXRDY) {
@@ -88,6 +89,7 @@ static intr_filter_t ns16550_intr(void *data) {
       res = IF_FILTERED;
     }
   }
+  klog("ns16550_intr: iir = %hhx", iir);
 
   return res;
 }
