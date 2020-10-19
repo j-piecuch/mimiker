@@ -99,7 +99,7 @@ static intr_filter_t ns16550_intr(void *data) {
 /*
  * If tx_buf is empty, we can try to write characters directly from tty->t_outq.
  * This routine attempts to do just that.
- * Must be called with bot tty->t_lock and ns16550->lock held.
+ * Must be called with both tty->t_lock and ns16550->lock held.
  */
 static void ns16550_try_bypass_txbuf(ns16550_state_t *ns16550, tty_t *tty) {
   resource_t *uart = ns16550->regs;
@@ -113,8 +113,11 @@ static void ns16550_try_bypass_txbuf(ns16550_state_t *ns16550, tty_t *tty) {
   }
 }
 
-/* Called with tty->t_lock held. */
-static void ns16550_fill_tx(tty_t *tty, ns16550_state_t *ns16550) {
+/*
+ * Move characters from tty->t_outq to ns16550->tx_buf.
+ * Must be called with tty->t_lock held.
+ */
+static void ns16550_fill_txbuf(ns16550_state_t *ns16550, tty_t *tty) {
   uint8_t byte;
 
   while (true) {
@@ -156,8 +159,7 @@ static void ns16550_tty_thread(void *arg) {
           tty_input(tty, byte);
       }
       if (ipend & IIR_TXRDY) {
-        /* Move characters from the tty's output queue to tx_buf. */
-        ns16550_fill_tx(tty, ns16550);
+        ns16550_fill_txbuf(ns16550, tty);
       }
     }
   }
