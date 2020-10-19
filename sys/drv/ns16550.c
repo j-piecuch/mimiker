@@ -176,7 +176,7 @@ static void ns16550_notify_out(tty_t *tty) {
   if (ringbuf_empty(&tty->t_outq))
     return;
 
-  ns16550_fill_tx(tty, ns16550);
+  ns16550_fill_txbuf(ns16550, tty);
 }
 
 static int ns16550_attach(device_t *dev) {
