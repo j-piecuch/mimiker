@@ -86,7 +86,7 @@ static intr_filter_t ns16550_intr(void *data) {
         }
         /* Disable TXRDY interrupts - the tty thread will re-enable them
          * after filling tx_buf. */
-        clr(uart, IER, IER_ETXRDY);
+        /* clr(uart, IER, IER_ETXRDY); */
       }
       res = IF_FILTERED;
     }
@@ -125,8 +125,8 @@ static void ns16550_fill_txbuf(ns16550_state_t *ns16550, tty_t *tty) {
     ns16550_try_bypass_txbuf(ns16550, tty);
     if (ringbuf_full(&ns16550->tx_buf) || !ringbuf_getb(&tty->t_outq, &byte)) {
       /* Enable TXRDY interrupts if there are characters in tx_buf. */
-      if (!ringbuf_empty(&ns16550->tx_buf))
-        set(ns16550->regs, IER, IER_ETXRDY);
+      /* if (!ringbuf_empty(&ns16550->tx_buf)) */
+      /*   set(ns16550->regs, IER, IER_ETXRDY); */
       ns16550->tty_outq_nonempty = !ringbuf_empty(&tty->t_outq);
       break;
     }
