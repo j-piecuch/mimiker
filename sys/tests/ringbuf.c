@@ -16,7 +16,7 @@ static int test_ringbuf_trivial(void) {
   assert(ringbuf_full(&rbt));
   assert(!ringbuf_putb(&rbt, c));
 
-  uint8_t result = 0;
+  uint8_t result;
 
   assert(ringbuf_getb(&rbt, &result));
   assert(result == c);
@@ -37,7 +37,7 @@ static void put_fails(ringbuf_t *rb, uint8_t byte) {
 }
 
 static void get_succeeds(ringbuf_t *rb, uint8_t byte) {
-  uint8_t result = 0;
+  uint8_t result;
 
   assert(!ringbuf_empty(rb));
   assert(ringbuf_getb(rb, &result));
