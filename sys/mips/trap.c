@@ -2,7 +2,7 @@
 #include <sys/klog.h>
 #include <sys/errno.h>
 #include <sys/interrupt.h>
-#include <mips/context.h>
+#include <sys/context.h>
 #include <mips/interrupt.h>
 #include <mips/tlb.h>
 #include <sys/pmap.h>
@@ -16,7 +16,7 @@ static inline unsigned exc_code(ctx_t *ctx) {
   return (_REG(ctx, CAUSE) & CR_X_MASK) >> CR_X_SHIFT;
 }
 
-static void syscall_handler(ctx_t *ctx) {
+static void syscall_handler(ctx_t *ctx, syscall_result_t *result) {
   /* TODO Eventually we should have a platform-independent syscall handler. */
   register_t args[SYS_MAXSYSARGS];
   register_t code = _REG(ctx, V0);
@@ -59,8 +59,8 @@ static void syscall_handler(ctx_t *ctx) {
   if (!error)
     error = se->call(td->td_proc, (void *)args, &retval);
 
-  if (error != EJUSTRETURN)
-    user_ctx_set_retval((user_ctx_t *)ctx, error ? -1 : retval, error);
+  result->retval = error ? -1 : retval;
+  result->error = error;
 }
 
 /*
@@ -193,8 +193,10 @@ static void user_trap_handler(ctx_t *ctx) {
   assert(!intr_disabled() && !preempt_disabled());
 
   int cp_id;
+  syscall_result_t result;
+  unsigned int code = exc_code(ctx);
 
-  switch (exc_code(ctx)) {
+  switch (code) {
     case EXC_MOD:
     case EXC_TLBL:
     case EXC_TLBS:
@@ -213,7 +215,7 @@ static void user_trap_handler(ctx_t *ctx) {
       break;
 
     case EXC_SYS:
-      syscall_handler(ctx);
+      syscall_handler(ctx, &result);
       break;
 
     case EXC_FPE:
@@ -244,7 +246,7 @@ static void user_trap_handler(ctx_t *ctx) {
   on_exc_leave();
 
   /* If we're about to return to user mode then check pending signals, etc. */
-  on_user_exc_leave();
+  on_user_exc_leave((mcontext_t *)ctx, code == EXC_SYS ? &result : NULL);
 }
 
 static void kern_trap_handler(ctx_t *ctx) {
@@ -268,9 +270,9 @@ static void kern_trap_handler(ctx_t *ctx) {
 void mips_exc_handler(ctx_t *ctx) {
   assert(cpu_intr_disabled());
 
-  bool kern_mode = kern_mode_p(ctx);
+  bool user_mode = user_mode_p(ctx);
 
-  if (kern_mode) {
+  if (!user_mode) {
     /* If there's not enough space on the stack to store another exception
      * frame we consider situation to be critical and panic.
      * Hopefully sizeof(ctx_t) bytes of unallocated stack space will be enough
@@ -284,11 +286,11 @@ void mips_exc_handler(ctx_t *ctx) {
   }
 
   if (exc_code(ctx)) {
-    if (kern_mode)
-      kern_trap_handler(ctx);
-    else
+    if (user_mode)
       user_trap_handler(ctx);
+    else
+      kern_trap_handler(ctx);
   } else {
-    mips_intr_handler(ctx);
+    intr_root_handler(ctx);
   }
 }

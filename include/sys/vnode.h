@@ -7,6 +7,8 @@
 #include <sys/refcnt.h>
 #include <sys/spinlock.h>
 #include <sys/condvar.h>
+#include <sys/file.h>
+#include <sys/cred.h>
 
 /* Forward declarations */
 typedef struct vnode vnode_t;
@@ -34,14 +36,14 @@ typedef int vnode_read_t(vnode_t *v, uio_t *uio, int ioflag);
 typedef int vnode_write_t(vnode_t *v, uio_t *uio, int ioflag);
 typedef int vnode_seek_t(vnode_t *v, off_t oldoff, off_t newoff);
 typedef int vnode_getattr_t(vnode_t *v, vattr_t *va);
-typedef int vnode_setattr_t(vnode_t *v, vattr_t *va);
+typedef int vnode_setattr_t(vnode_t *v, vattr_t *va, cred_t *cred);
 typedef int vnode_create_t(vnode_t *dv, componentname_t *cn, vattr_t *va,
                            vnode_t **vp);
 typedef int vnode_remove_t(vnode_t *dv, vnode_t *v, componentname_t *cn);
 typedef int vnode_mkdir_t(vnode_t *dv, componentname_t *cn, vattr_t *va,
                           vnode_t **vp);
 typedef int vnode_rmdir_t(vnode_t *dv, vnode_t *v, componentname_t *cn);
-typedef int vnode_access_t(vnode_t *v, accmode_t mode);
+typedef int vnode_access_t(vnode_t *v, accmode_t mode, cred_t *cred);
 typedef int vnode_ioctl_t(vnode_t *v, u_long cmd, void *data);
 typedef int vnode_reclaim_t(vnode_t *v);
 typedef int vnode_readlink_t(vnode_t *v, uio_t *uio);
@@ -155,8 +157,8 @@ static inline int VOP_GETATTR(vnode_t *v, vattr_t *va) {
   return VOP_CALL(getattr, v, va);
 }
 
-static inline int VOP_SETATTR(vnode_t *v, vattr_t *va) {
-  return VOP_CALL(setattr, v, va);
+static inline int VOP_SETATTR(vnode_t *v, vattr_t *va, cred_t *cred) {
+  return VOP_CALL(setattr, v, va, cred);
 }
 
 static inline int VOP_CREATE(vnode_t *dv, componentname_t *cn, vattr_t *va,
@@ -177,8 +179,8 @@ static inline int VOP_RMDIR(vnode_t *dv, vnode_t *v, componentname_t *cn) {
   return VOP_CALL(rmdir, dv, v, cn);
 }
 
-static inline int VOP_ACCESS(vnode_t *v, mode_t mode) {
-  return VOP_CALL(access, v, mode);
+static inline int VOP_ACCESS(vnode_t *v, mode_t mode, cred_t *cred) {
+  return VOP_CALL(access, v, mode, cred);
 }
 
 static inline int VOP_IOCTL(vnode_t *v, u_long cmd, void *data) {
@@ -229,7 +231,15 @@ bool vnode_is_mounted(vnode_t *v);
 /* Convenience function with default vnode operation implementation. */
 int vnode_open_generic(vnode_t *v, int mode, file_t *fp);
 int vnode_seek_generic(vnode_t *v, off_t oldoff, off_t newoff);
-int vnode_access_generic(vnode_t *v, accmode_t mode);
+int vnode_access_generic(vnode_t *v, accmode_t mode, cred_t *cred);
+
+/* Default fileops implementations for files with v-nodes. */
+int default_vnread(file_t *f, uio_t *uio);
+int default_vnwrite(file_t *f, uio_t *uio);
+int default_vnclose(file_t *f);
+int default_vnstat(file_t *f, stat_t *sb);
+int default_vnseek(file_t *f, off_t offset, int whence, off_t *newoffp);
+int default_vnioctl(file_t *f, u_long cmd, void *data);
 
 uint8_t vt2dt(vnodetype_t v_type);
 

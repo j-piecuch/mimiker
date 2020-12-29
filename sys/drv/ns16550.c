@@ -23,7 +23,7 @@
 typedef struct ns16550_state {
   spin_t lock;
   ringbuf_t tx_buf, rx_buf;
-  intr_handler_t intr_handler;
+  resource_t *irq_res;
   resource_t *regs;
   tty_t *tty;
   condvar_t tty_thread_cv;
@@ -146,6 +146,7 @@ static void ns16550_fill_txbuf(ns16550_state_t *ns16550, tty_t *tty) {
     ns16550_set_tty_outq_nonempty_flag(ns16550, tty);
     ringbuf_putb(&ns16550->tx_buf, byte);
   }
+  tty_getc_done(tty);
 }
 
 static bool ns16550_getb_lock(ns16550_state_t *ns16550, uint8_t *byte_p) {
@@ -170,7 +171,8 @@ static void ns16550_tty_thread(void *arg) {
       if (work & TTY_THREAD_RXRDY) {
         /* Move characters from rx_buf into the tty's input queue. */
         while (ns16550_getb_lock(ns16550, &byte))
-          tty_input(tty, byte);
+          if (!tty_input(tty, byte))
+            klog("dropped character %hhx", byte);
       }
       if (work & TTY_THREAD_TXRDY) {
         ns16550_fill_txbuf(ns16550, tty);
@@ -181,7 +183,7 @@ static void ns16550_tty_thread(void *arg) {
 
 /*
  * New characters have appeared in the tty's output queue.
- * Notify the tty thread to do the work.
+ * Fill the UART's tx_buf and enable TXRDY interrupts.
  * Called with `tty->t_lock` held.
  */
 static void ns16550_notify_out(tty_t *tty) {
@@ -219,29 +221,34 @@ static int ns16550_attach(device_t *dev) {
   sched_add(tty_thread);
 
   /* TODO Small hack to select COM1 UART */
-  ns16550->regs = bus_alloc_resource(
-    dev, RT_ISA, 0, IO_COM1, IO_COM1 + IO_COMSIZE - 1, IO_COMSIZE, RF_ACTIVE);
+  ns16550->regs = device_take_ioports(dev, 0, RF_ACTIVE);
   assert(ns16550->regs != NULL);
-  ns16550->intr_handler =
-    INTR_HANDLER_INIT(ns16550_intr, NULL, ns16550, "NS16550 UART", 0);
-  /* TODO Do not use magic number "4" here! */
-  bus_intr_setup(dev, 4, &ns16550->intr_handler);
+
+  ns16550->irq_res = device_take_irq(dev, 0, RF_ACTIVE);
+  bus_intr_setup(dev, ns16550->irq_res, ns16550_intr, NULL, ns16550,
+                 "NS16550 UART");
 
   /* Setup UART and enable interrupts */
   setup(ns16550->regs);
   out(ns16550->regs, IER, IER_ERXRDY | IER_ETXRDY);
 
   /* Prepare /dev/uart interface. */
-  devfs_makedev(NULL, "uart", &tty_vnodeops, ns16550->tty);
+  tty_makedev(NULL, "uart", tty);
 
   return 0;
 }
 
+static int ns16550_probe(device_t *dev) {
+  return dev->unit == 1; /* XXX: unit 1 assigned by gt_pci */
+}
+
+/* clang-format off */
 static driver_t ns16550_driver = {
   .desc = "NS16550 UART driver",
   .size = sizeof(ns16550_state_t),
   .attach = ns16550_attach,
-  .identify = bus_generic_identify,
+  .probe = ns16550_probe,
 };
+/* clang-format on */
 
 DEVCLASS_ENTRY(pci, ns16550_driver);

@@ -6,10 +6,10 @@
 #include <sys/thread.h>
 #include <sys/vm_physmem.h>
 #include <sys/context.h>
+#include <sys/interrupt.h>
 #include <aarch64/atags.h>
 #include <aarch64/mcontext.h>
 #include <aarch64/vm_param.h>
-#include <sys/interrupt.h>
 
 static int count_atags(atag_tag_t *atags) {
   int ntokens = 0;
@@ -52,7 +52,7 @@ static void process_atags(atag_tag_t *atags, char **tokens, kstack_t *stk) {
 void *board_stack(atag_tag_t *atags) {
   kstack_t *stk = &thread0.td_kstack;
 
-  thread0.td_uctx = kstack_alloc_s(stk, user_ctx_t);
+  thread0.td_uctx = kstack_alloc_s(stk, mcontext_t);
 
   int ntokens = count_atags(atags);
   char **kenvp = kstack_alloc(stk, (ntokens + 2) * sizeof(char *));

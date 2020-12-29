@@ -112,11 +112,15 @@ static int vnode_nop(vnode_t *v, ...) {
 #define vnode_remove_nop vnode_nop
 #define vnode_mkdir_nop vnode_nop
 #define vnode_rmdir_nop vnode_nop
-#define vnode_access_nop vnode_nop
 #define vnode_ioctl_nop vnode_nop
 #define vnode_reclaim_nop vnode_nop
 #define vnode_readlink_nop vnode_nop
 #define vnode_symlink_nop vnode_nop
+
+/* XXX when no v_access function don't return error */
+static int vnode_access_nop(vnode_t *v, mode_t m, cred_t *cred) {
+  return 0;
+}
 
 static int vnode_getattr_nop(vnode_t *v, vattr_t *va) {
   vattr_null(va);
@@ -169,7 +173,7 @@ void vattr_null(vattr_t *va) {
 }
 
 /* Default file operations using v-nodes. */
-static int default_vnread(file_t *f, uio_t *uio) {
+int default_vnread(file_t *f, uio_t *uio) {
   vnode_t *v = f->f_vnode;
   int error = 0;
   vnode_lock(v);
@@ -180,7 +184,7 @@ static int default_vnread(file_t *f, uio_t *uio) {
   return error;
 }
 
-static int default_vnwrite(file_t *f, uio_t *uio) {
+int default_vnwrite(file_t *f, uio_t *uio) {
   vnode_t *v = f->f_vnode;
   int error = 0, ioflag = 0;
   if (f->f_flags & FF_APPEND)
@@ -193,13 +197,13 @@ static int default_vnwrite(file_t *f, uio_t *uio) {
   return error;
 }
 
-static int default_vnclose(file_t *f) {
+int default_vnclose(file_t *f) {
   (void)VOP_CLOSE(f->f_vnode, f);
   vnode_drop(f->f_vnode);
   return 0;
 }
 
-static int default_vnstat(file_t *f, stat_t *sb) {
+int default_vnstat(file_t *f, stat_t *sb) {
   vnode_t *v = f->f_vnode;
   vattr_t va;
   int error;
@@ -209,7 +213,7 @@ static int default_vnstat(file_t *f, stat_t *sb) {
   return 0;
 }
 
-static int default_vnseek(file_t *f, off_t offset, int whence, off_t *newoffp) {
+int default_vnseek(file_t *f, off_t offset, int whence, off_t *newoffp) {
   vnode_t *v = f->f_vnode;
   int error;
   vattr_t va;
@@ -222,6 +226,12 @@ static int default_vnseek(file_t *f, off_t offset, int whence, off_t *newoffp) {
 
   off_t size = va.va_size;
   if (size == VNOVAL) {
+    error = ESPIPE;
+    goto out;
+  }
+
+  if (S_ISCHR(va.va_mode)) {
+    /* Character devices do not implement seek operation! */
     error = ESPIPE;
     goto out;
   }
@@ -256,7 +266,7 @@ out:
   return error;
 }
 
-static int default_ioctl(file_t *f, u_long cmd, void *data) {
+int default_vnioctl(file_t *f, u_long cmd, void *data) {
   vnode_t *v = f->f_vnode;
   int error = EPASSTHROUGH;
 
@@ -281,7 +291,7 @@ static fileops_t default_vnode_fileops = {
   .fo_close = default_vnclose,
   .fo_seek = default_vnseek,
   .fo_stat = default_vnstat,
-  .fo_ioctl = default_ioctl,
+  .fo_ioctl = default_vnioctl,
 };
 
 int vnode_open_generic(vnode_t *v, int mode, file_t *fp) {
@@ -312,21 +322,12 @@ int vnode_seek_generic(vnode_t *v, off_t oldoff, off_t newoff) {
   return 0;
 }
 
-int vnode_access_generic(vnode_t *v, accmode_t acc) {
+int vnode_access_generic(vnode_t *v, accmode_t acc, cred_t *cred) {
   vattr_t va;
   int error;
 
   if ((error = VOP_GETATTR(v, &va)))
     return error;
 
-  mode_t mode = 0;
-
-  if (acc & VEXEC)
-    mode |= S_IXUSR;
-  if (acc & VWRITE)
-    mode |= S_IWUSR;
-  if (acc & VREAD)
-    mode |= S_IRUSR;
-
-  return ((va.va_mode & mode) == mode || acc == 0) ? 0 : EACCES;
+  return cred_can_access(&va, cred, acc);
 }
