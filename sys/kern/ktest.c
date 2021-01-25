@@ -4,6 +4,7 @@
 #include <sys/malloc.h>
 #include <sys/libkern.h>
 #include <sys/interrupt.h>
+#include <sys/time.h>
 
 #define KTEST_MAX_NO 1024
 #define KTEST_FAIL(args...)                                                    \
@@ -197,6 +198,11 @@ static void run_all_tests(void) {
 
   /* If we've managed to get here, it means all tests passed with no issues. */
   ktest_atomically_print_success();
+
+  timespec_t now;
+  do_clock_gettime(CLOCK_MONOTONIC, &now);
+  kprintf("Tests took %lld.%02ld seconds\n", now.tv_sec,
+          now.tv_nsec / 10000000);
 
   /* As the tests are usually very verbose, for user convenience let's print out
      the order of tests once again. */
