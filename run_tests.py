@@ -6,6 +6,7 @@ import signal
 import sys
 import random
 import os
+import time
 from launcher import gdb_port, getvar, setboard
 
 
@@ -70,6 +71,7 @@ def test_seed(seed, interactive=True, repeat=1, retry=0):
         sys.exit(1)
 
     print("Testing seed %u..." % seed)
+    start_time = time.time()
     child = pexpect.spawn('./launch',
                           ['--board', getvar('board'),
                            '-t', 'test=all', 'klog-quiet=1',
@@ -78,6 +80,8 @@ def test_seed(seed, interactive=True, repeat=1, retry=0):
         ['[TEST PASSED]', '[TEST FAILED]', '[PANIC]', pexpect.EOF,
          pexpect.TIMEOUT], timeout=TIMEOUT)
     if index == 0:
+        test_time = time.time() - start_time
+        print("Test took %.2f seconds" % test_time)
         child.terminate(True)
         return
     elif index in [1, 2]:
