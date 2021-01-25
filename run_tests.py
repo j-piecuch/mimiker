@@ -81,7 +81,7 @@ def test_seed(seed, interactive=True, repeat=1, retry=0):
          pexpect.TIMEOUT], timeout=TIMEOUT)
     if index == 0:
         test_time = time.time() - start_time
-        print("Test took %.2f seconds", test_time)
+        print("Test took %.2f seconds" % test_time)
         child.terminate(True)
         return
     elif index in [1, 2]:
